@@ -5,15 +5,17 @@ import java.nio.file.Path
 import kotlin.io.path.isDirectory
 import kotlin.io.path.name
 
-interface FileTreeNode {
+abstract class FileTreeNode {
+    abstract val path: Path
+
+    abstract val hasChildren: Boolean
+    abstract val children: List<FileTreeNode>
+
     val name: String
-    val path: Path
-    val hasChildren: Boolean
-    val children: List<FileTreeNode>
+        get() = path.name
 }
 
-class Folder(override val path: Path): FileTreeNode {
-    override val name = path.name
+class Folder(override val path: Path): FileTreeNode() {
     override val hasChildren: Boolean = true
 
     private var cachedChildren: List<FileTreeNode>? = null
@@ -32,8 +34,7 @@ class Folder(override val path: Path): FileTreeNode {
         }
 }
 
-class File(override val path: Path): FileTreeNode {
-    override val name = path.name
+class File(override val path: Path): FileTreeNode() {
     override val hasChildren = false
     override val children = emptyList<FileTreeNode>()
 }
