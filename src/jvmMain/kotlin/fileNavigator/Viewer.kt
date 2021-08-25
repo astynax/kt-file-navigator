@@ -1,9 +1,7 @@
 package fileNavigator
 
 import androidx.compose.foundation.*
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
@@ -44,16 +42,14 @@ fun Balloon(
 fun Preview(
     path: Path?,
     modifier: Modifier = Modifier
-) = Box(
+) = ScrollableBox(
     contentAlignment = Alignment.Center,
     modifier = modifier
-        .verticalScroll(rememberScrollState())
-        .horizontalScroll(rememberScrollState())
         .background(color = Color.LightGray)
         .border(width = 1.dp, color = Color.Gray)
         .focusable()
-) {
-    var preview by remember { mutableStateOf<@Composable () -> Unit>({})}
+) { innerModifier ->
+    var preview by remember { mutableStateOf<@Composable () -> Unit>({}) }
 
     LaunchedEffect(path) {
         when (path) {
@@ -67,7 +63,8 @@ fun Preview(
                 onSuccess = { preview = it },
                 onFailure = {
                     when (it) {
-                        is CancellationException -> {}
+                        is CancellationException -> {
+                        }
                         else -> {
                             print(it.stackTraceToString())
                             preview = {
@@ -84,8 +81,14 @@ fun Preview(
         }
     }
 
-    preview()
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = innerModifier
+    ) {
+        preview()
+    }
 }
+
 
 private suspend fun getPreviewer(
     type: String?, path: Path

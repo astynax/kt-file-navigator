@@ -90,21 +90,23 @@ fun rememberBrowserState(root: Folder): BrowserState {
 fun TreeView(
     state: BrowserState,
     modifier: Modifier = Modifier
-) = Column(
+) = ScrollableBox(
     modifier = modifier
-        .verticalScroll(rememberScrollState())
-        .horizontalScroll(rememberScrollState())
         .background(color = Color.White)
         .border(width = 1.dp, color = Color.Gray)
         .focusable()
         .onPreviewKeyEvent(state::navigateByKeys)
-) {
-    state.items.forEach {
-        Row {
-            Pad(it.level)
-            if (it.node.hasChildren)
-                FolderView(it.node, state)
-            else FileView(it.node, state)
+) { innerModifier ->
+    Column(
+        modifier = innerModifier
+    ) {
+        state.items.forEach {
+            Row {
+                Pad(it.level)
+                if (it.node.hasChildren)
+                    FolderView(it.node, state)
+                else FileView(it.node, state)
+            }
         }
     }
 }
