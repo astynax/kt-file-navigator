@@ -3,8 +3,8 @@ import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
-    kotlin("multiplatform") version "1.5.10"
-    id("org.jetbrains.compose") version "0.4.0"
+    kotlin("multiplatform") version "1.5.21"
+    id("org.jetbrains.compose") version "1.0.0-alpha3"
 }
 
 group = "me.astynax"
@@ -12,6 +12,7 @@ version = "1.0"
 
 repositories {
     mavenCentral()
+    google()
     maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
 }
 
@@ -21,6 +22,7 @@ kotlin {
         named("jvmMain") {
             dependencies {
                 implementation(compose.desktop.currentOs)
+                implementation("androidx.annotation:annotation:1.2.0")
             }
         }
     }

@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import java.nio.file.Path
 
 class BrowserState(
+    val root: Folder,
     private val unfolded: Set<Path>,
     val selected: Path?,
     val toggle: (Path) -> Unit,
@@ -25,11 +26,12 @@ class BrowserState(
 }
 
 @Composable
-fun rememberBrowserState(): BrowserState {
+fun rememberBrowserState(root: Folder): BrowserState {
     var unfolded by remember { mutableStateOf(emptySet<Path>()) }
     var selected by remember { mutableStateOf<Path?>(null) }
 
     return BrowserState(
+        root = root,
         unfolded = unfolded,
         selected = selected,
         toggle = {
@@ -39,11 +41,20 @@ fun rememberBrowserState(): BrowserState {
     )
 }
 
-fun Modifier.highlightIf(condition: Boolean): Modifier =
-    if (condition)
-        this.background(color = Color.LightGray)
-            .border(1.dp, Color.Red)
-    else this
+@Composable
+fun TreeView(
+    state: BrowserState,
+    modifier: Modifier = Modifier
+) = Column(
+    modifier = modifier
+        .verticalScroll(rememberScrollState())
+        .horizontalScroll(rememberScrollState())
+        .background(color = Color.White)
+        .border(width = 1.dp, color = Color.Gray)
+        .focusable()
+) {
+    FolderItems(state.root.children, state, level = 0)
+}
 
 @Composable
 fun FolderItems(
@@ -74,21 +85,22 @@ fun FolderView(
     state: BrowserState,
     level: Int,
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.offset(x = level.dp)
-            .fillMaxWidth()
-            .highlightIf(state.selected == node.path)
-            .clickable { state.select(node.path) }
-    ) {
+    Row {
         Pad(level)
-        Icon(
-            if (state.isUnfolded(node.path)) Icons.Rounded.ArrowDropDown
-            else Icons.Rounded.ArrowForward,
-            contentDescription = null,
-            modifier = Modifier.clickable { state.toggle(node.path) }
-        )
-        Text(node.name)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.offset(x = level.dp)
+                .highlightIf(state.selected == node.path)
+                .clickable { state.select(node.path) }
+        ) {
+            Icon(
+                if (state.isUnfolded(node.path)) Icons.Rounded.ArrowDropDown
+                else Icons.Rounded.ArrowForward,
+                contentDescription = null,
+                modifier = Modifier.clickable { state.toggle(node.path) }
+            )
+            Text(node.name)
+        }
     }
     if (state.isUnfolded(node.path)) {
         FolderItems(node.children, state, level + 1)
@@ -99,34 +111,26 @@ fun FolderView(
 fun FileView(
     node: FileTreeNode,
     state: BrowserState,
-    level: Int,
-) = Row(
-    verticalAlignment = Alignment.CenterVertically,
-    modifier = Modifier
-        .fillMaxWidth()
-        .highlightIf(state.selected == node.path)
-        .clickable { state.select(node.path) }
-) {
+    level: Int
+) = Row {
     Pad(level)
-    Icon(Icons.Rounded.Check, contentDescription = null)
-    Text(node.name)
-}
-
-@Composable
-fun TreeView(
-    root: Folder,
-    state: BrowserState
-) = Column(
-    modifier = Modifier
-        .fillMaxHeight()
-        .fillMaxWidth(0.3f)
-        .verticalScroll(rememberScrollState())
-        .horizontalScroll(rememberScrollState())
-) {
-    FolderItems(root.children, state, level = 0)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .highlightIf(state.selected == node.path)
+            .clickable { state.select(node.path) }
+    ) {
+        Icon(Icons.Rounded.Check, contentDescription = null)
+        Text(node.name)
+    }
 }
 
 fun <T> Set<T>.toggle(item: T): Set<T> =
     if (item in this)
         this - item
     else this + item
+
+fun Modifier.highlightIf(condition: Boolean): Modifier =
+    if (condition)
+        this.background(color = Color.LightGray)
+    else this
