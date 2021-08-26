@@ -1,6 +1,7 @@
 package fileNavigator
 
 import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.Icon
 import androidx.compose.material.Text
@@ -21,53 +22,55 @@ import java.nio.file.Path
 import kotlin.io.path.extension
 import kotlin.io.path.name
 
+data class ViewerState(
+    val scrollBoxState: ScrollBoxState,
+    val interactionSource: MutableInteractionSource,
+    val preview: MutableState<@Composable () -> Unit>,
+    val selected: MutableState<Path?>
+)
+
 @Composable
-fun Balloon(
-    text: String,
-    icon: ImageVector? = Icons.Default.Info,
-    color: Color = Color.White
-) = Box(
-    modifier = Modifier.background(color = color)
-) {
-    Row(
-        modifier = Modifier.padding(all = 5.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        icon?.let { Icon(it, contentDescription = null) }
-        Text(text)
-    }
+fun rememberViewerState(selected: MutableState<Path?>): ViewerState {
+    val preview = remember { mutableStateOf<@Composable () -> Unit>({}) }
+    val scrollBoxState = rememberScrollBoxState()
+    val interactionSource = remember { MutableInteractionSource() }
+
+    return ViewerState(
+        scrollBoxState = scrollBoxState,
+        interactionSource = interactionSource,
+        preview = preview,
+        selected = selected,
+    )
 }
 
 @Composable
-fun Preview(
-    path: Path?,
+fun Viewer(
+    state: ViewerState,
     modifier: Modifier = Modifier
 ) = ScrollableBox(
+    state = state.scrollBoxState,
     contentAlignment = Alignment.Center,
-    modifier = modifier
-        .background(color = Color.LightGray)
-        .border(width = 1.dp, color = Color.Gray)
-        .focusable()
+    modifier = modifier.background(color = Color.LightGray)
+        .focusable(interactionSource = state.interactionSource)
+        .highlightFocus(state.interactionSource)
 ) { innerModifier ->
-    var preview by remember { mutableStateOf<@Composable () -> Unit>({}) }
-
-    LaunchedEffect(path) {
-        when (path) {
-            null -> preview = {}
+    LaunchedEffect(state.selected.value) {
+        when (val path = state.selected.value) {
+            null -> state.preview.value = {}
             else -> this.runCatching {
                 getPreviewer(
                     type = path.getTypeAsync(),
                     path = path
                 )(path)
             }.fold(
-                onSuccess = { preview = it },
+                onSuccess = { state.preview.value = it },
                 onFailure = {
                     when (it) {
                         is CancellationException -> {
                         }
                         else -> {
                             print(it.stackTraceToString())
-                            preview = {
+                            state.preview.value = {
                                 Balloon(
                                     "Unable to preview this file.",
                                     icon = Icons.Default.Warning,
@@ -85,10 +88,26 @@ fun Preview(
         contentAlignment = Alignment.Center,
         modifier = innerModifier
     ) {
-        preview()
+        state.preview.value()
     }
 }
 
+@Composable
+fun Balloon(
+    text: String,
+    icon: ImageVector? = Icons.Default.Info,
+    color: Color = Color.White
+) = Box(
+    modifier = Modifier.background(color = color)
+) {
+    Row(
+        modifier = Modifier.padding(all = 5.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        icon?.let { Icon(it, contentDescription = null) }
+        Text(text)
+    }
+}
 
 private suspend fun getPreviewer(
     type: String?, path: Path

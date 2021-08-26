@@ -1,8 +1,10 @@
 package fileNavigator
 
 import androidx.compose.foundation.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.Icon
+import androidx.compose.material.MaterialTheme
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDropDown
@@ -19,12 +21,16 @@ import java.nio.file.Path
 
 class BrowserState(
     private val unfolded: Set<Path>,
-    val selected: Path?,
+    private val selected: MutableState<Path?>,
     val toggle: (Path) -> Unit,
     val select: (Path) -> Unit,
-    val items: List<ListItem>
+    val items: List<ListItem>,
+    val interactionSource: MutableInteractionSource,
+    val scrollBoxState: ScrollBoxState,
 ) {
     fun isUnfolded(path: Path) = path in unfolded
+
+    fun isSelected(path: Path) = path == selected.value
 
     fun selectFirst() {
         items.firstOrNull()?.let { select(it.node.path) }
@@ -35,11 +41,11 @@ class BrowserState(
     }
 
     fun selectPrevious() {
-        when (selected) {
+        when (val path = selected.value) {
             null -> selectFirst()
             else -> items.asSequence().zipWithNext()
                 .find { (_, next) ->
-                    next.node.path == selected
+                    next.node.path == path
                 }?.let { (previous, _) ->
                     select(previous.node.path)
                 }
@@ -47,11 +53,11 @@ class BrowserState(
     }
 
     fun selectNext() {
-        when (selected) {
+        when (val path = selected.value) {
             null -> selectFirst()
             else -> items.asSequence().zipWithNext()
                 .find { (previous, _) ->
-                    previous.node.path == selected
+                    previous.node.path == path
                 }?.let { (_, next) ->
                     select(next.node.path)
                 }
@@ -65,9 +71,13 @@ data class ListItem(
 )
 
 @Composable
-fun rememberBrowserState(root: Folder): BrowserState {
+fun rememberBrowserState(
+    root: Folder,
+    selected: MutableState<Path?>
+): BrowserState {
     var unfolded by remember { mutableStateOf(emptySet<Path>()) }
-    var selected by remember { mutableStateOf<Path?>(null) }
+    val scrollBoxState = rememberScrollBoxState()
+    val interactionSource = remember { MutableInteractionSource() }
     var items by remember {
         mutableStateOf(
             root.listVisible(unfolded)
@@ -82,20 +92,22 @@ fun rememberBrowserState(root: Folder): BrowserState {
             unfolded = unfolded.toggle(it)
             items = root.listVisible(unfolded)
         },
-        select = { selected = it }
+        select = { selected.value = it },
+        scrollBoxState = scrollBoxState,
+        interactionSource = interactionSource
     )
 }
 
 @Composable
-fun TreeView(
+fun Browser(
     state: BrowserState,
     modifier: Modifier = Modifier
 ) = ScrollableBox(
-    modifier = modifier
-        .background(color = Color.White)
-        .border(width = 1.dp, color = Color.Gray)
-        .focusable()
+    state = state.scrollBoxState,
+    modifier = modifier.background(color = MaterialTheme.colors.background)
         .onPreviewKeyEvent(state::navigateByKeys)
+        .focusable(interactionSource = state.interactionSource)
+        .highlightFocus(state.interactionSource)
 ) { innerModifier ->
     Column(
         modifier = innerModifier
@@ -139,7 +151,7 @@ fun FolderView(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .highlightIf(state.selected == node.path)
+            .highlightIf(state.isSelected(node.path))
             .clickable { state.select(node.path) }
     ) {
         Icon(
@@ -159,7 +171,7 @@ fun FileView(
 ) = Row(
     verticalAlignment = Alignment.CenterVertically,
     modifier = Modifier
-        .highlightIf(state.selected == node.path)
+        .highlightIf(state.isSelected(node.path))
         .clickable { state.select(node.path) }
 ) {
     Icon(Icons.Rounded.Check, contentDescription = null)
