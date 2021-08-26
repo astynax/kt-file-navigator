@@ -21,7 +21,7 @@ import java.nio.file.Path
 
 class BrowserState(
     private val unfolded: Set<Path>,
-    private val selected: MutableState<Path?>,
+    val selected: Path?,
     val toggle: (Path) -> Unit,
     val select: (Path) -> Unit,
     val items: List<ListItem>,
@@ -29,8 +29,6 @@ class BrowserState(
     val scrollBoxState: ScrollBoxState,
 ) {
     fun isUnfolded(path: Path) = path in unfolded
-
-    fun isSelected(path: Path) = path == selected.value
 
     fun selectFirst() {
         items.firstOrNull()?.let { select(it.node.path) }
@@ -41,11 +39,11 @@ class BrowserState(
     }
 
     fun selectPrevious() {
-        when (val path = selected.value) {
+        when (selected) {
             null -> selectFirst()
             else -> items.asSequence().zipWithNext()
                 .find { (_, next) ->
-                    next.node.path == path
+                    next.node.path == selected
                 }?.let { (previous, _) ->
                     select(previous.node.path)
                 }
@@ -53,15 +51,19 @@ class BrowserState(
     }
 
     fun selectNext() {
-        when (val path = selected.value) {
+        when (selected) {
             null -> selectFirst()
             else -> items.asSequence().zipWithNext()
                 .find { (previous, _) ->
-                    previous.node.path == path
+                    previous.node.path == selected
                 }?.let { (_, next) ->
                     select(next.node.path)
                 }
         }
+    }
+
+    fun toggleSelected() {
+        selected?.apply(toggle)
     }
 }
 
@@ -73,9 +75,9 @@ data class ListItem(
 @Composable
 fun rememberBrowserState(
     root: Folder,
-    selected: MutableState<Path?>
 ): BrowserState {
-    var unfolded by remember { mutableStateOf(emptySet<Path>()) }
+    var selected by remember { mutableStateOf<Path?>(null) }
+    val unfolded = remember { mutableSetOf<Path>() }
     val scrollBoxState = rememberScrollBoxState()
     val interactionSource = remember { MutableInteractionSource() }
     var items by remember {
@@ -84,15 +86,31 @@ fun rememberBrowserState(
         )
     }
 
+    fun toggle(path: Path) {
+        items.find { it.node.path == path }
+            ?.also { item ->
+                if (path in unfolded) {
+                    unfolded.remove(path)
+                    item.node.listVisible(unfolded)
+                        .map { it.node.path }
+                        .let {
+                            // move selection to the just folded item
+                            if (selected in it) selected = path
+                            // unfold all the sub-folders
+                            unfolded.removeAll(it)
+                        }
+                } else if (item.node.hasChildren)
+                    unfolded.add(path)
+            }
+        items = root.listVisible(unfolded)
+    }
+
     return BrowserState(
         items = items,
         unfolded = unfolded,
         selected = selected,
-        toggle = {
-            unfolded = unfolded.toggle(it)
-            items = root.listVisible(unfolded)
-        },
-        select = { selected.value = it },
+        toggle = ::toggle,
+        select = { selected = it },
         scrollBoxState = scrollBoxState,
         interactionSource = interactionSource
     )
@@ -126,10 +144,11 @@ fun Browser(
 @OptIn(ExperimentalComposeUiApi::class)
 fun BrowserState.navigateByKeys(event: KeyEvent): Boolean =
     event.type == KeyEventType.KeyDown && (mapOf(
-        Key.MoveHome to { this.selectFirst() },
-        Key.MoveEnd to { this.selectLast() },
-        Key.DirectionUp to { this.selectPrevious() },
-        Key.DirectionDown to { this.selectNext() }
+        Key.MoveHome to { selectFirst() },
+        Key.MoveEnd to { selectLast() },
+        Key.DirectionUp to { selectPrevious() },
+        Key.DirectionDown to { selectNext() },
+        Key.Spacebar to { toggleSelected() },
     )[event.key]
         ?.let { it(); true }
         ?: false)
@@ -151,7 +170,7 @@ fun FolderView(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .highlightIf(state.isSelected(node.path))
+            .highlightIf(state.selected == node.path)
             .clickable { state.select(node.path) }
     ) {
         Icon(
@@ -171,17 +190,12 @@ fun FileView(
 ) = Row(
     verticalAlignment = Alignment.CenterVertically,
     modifier = Modifier
-        .highlightIf(state.isSelected(node.path))
+        .highlightIf(state.selected == node.path)
         .clickable { state.select(node.path) }
 ) {
     Icon(Icons.Rounded.Check, contentDescription = null)
     Text(node.name)
 }
-
-fun <T> Set<T>.toggle(item: T): Set<T> =
-    if (item in this)
-        this - item
-    else this + item
 
 fun Modifier.highlightIf(condition: Boolean): Modifier =
     if (condition)

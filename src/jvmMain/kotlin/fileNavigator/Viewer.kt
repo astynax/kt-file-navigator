@@ -26,11 +26,10 @@ data class ViewerState(
     val scrollBoxState: ScrollBoxState,
     val interactionSource: MutableInteractionSource,
     val preview: MutableState<@Composable () -> Unit>,
-    val selected: MutableState<Path?>
 )
 
 @Composable
-fun rememberViewerState(selected: MutableState<Path?>): ViewerState {
+fun rememberViewerState(): ViewerState {
     val preview = remember { mutableStateOf<@Composable () -> Unit>({}) }
     val scrollBoxState = rememberScrollBoxState()
     val interactionSource = remember { MutableInteractionSource() }
@@ -38,14 +37,14 @@ fun rememberViewerState(selected: MutableState<Path?>): ViewerState {
     return ViewerState(
         scrollBoxState = scrollBoxState,
         interactionSource = interactionSource,
-        preview = preview,
-        selected = selected,
+        preview = preview
     )
 }
 
 @Composable
 fun Viewer(
     state: ViewerState,
+    path: Path?,
     modifier: Modifier = Modifier
 ) = ScrollableBox(
     state = state.scrollBoxState,
@@ -54,8 +53,8 @@ fun Viewer(
         .focusable(interactionSource = state.interactionSource)
         .highlightFocus(state.interactionSource)
 ) { innerModifier ->
-    LaunchedEffect(state.selected.value) {
-        when (val path = state.selected.value) {
+    LaunchedEffect(path) {
+        when (path) {
             null -> state.preview.value = {}
             else -> this.runCatching {
                 getPreviewer(

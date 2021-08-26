@@ -18,14 +18,10 @@ fun UI() = Row(
     modifier = Modifier.fillMaxSize()
 ) {
     val requester = remember { FocusRequester() }
-    val selected = mutableStateOf<Path?>(null)
     val browserState = rememberBrowserState(
-        root = Folder(Path.of(".")),
-        selected = selected
+        root = Folder(Path.of("."))
     )
-    val viewerState = rememberViewerState(
-        selected = selected
-    )
+    val viewerState = rememberViewerState()
 
     Browser(
         state = browserState,
@@ -36,6 +32,7 @@ fun UI() = Row(
     )
     Viewer(
         state = viewerState,
+        path = browserState.selected,
         modifier = Modifier
             .fillMaxHeight()
             .weight(3f)
