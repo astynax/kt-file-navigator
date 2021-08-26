@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.nio.file.Files
 import java.nio.file.Path
@@ -54,6 +55,7 @@ fun Viewer(
         .highlightFocus(state.interactionSource)
 ) { innerModifier ->
     LaunchedEffect(path) {
+        delay(500)
         when (path) {
             null -> state.preview.value = {}
             else -> this.runCatching {
