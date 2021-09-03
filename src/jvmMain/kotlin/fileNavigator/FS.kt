@@ -2,17 +2,15 @@ package fileNavigator
 
 import kotlinx.coroutines.*
 import java.nio.file.*
-import java.nio.file.StandardWatchEventKinds.ENTRY_CREATE
-import java.nio.file.StandardWatchEventKinds.ENTRY_DELETE
-import kotlin.io.path.isDirectory
-import kotlin.io.path.name
+import java.util.concurrent.TimeUnit
+import kotlin.io.path.*
 
-inline class FolderPath(val value: Path)
+inline class FolderId(val value: Path)
 
 interface FolderLike {
+    val path: Path
     val watchable: Boolean
-    val path: FolderPath
-    val subfolders: Iterable<FolderPath>
+    val subfolders: Iterable<Path>
     val files: Iterable<Path>
     val size: Int
 }
@@ -20,40 +18,47 @@ interface FolderLike {
 data class FSPreviewItem(
     val level: Int,
     val name: String,
-    val key: FolderPath? = null
+    val path: Path,
+    val key: FolderId? = null
 )
 
 class FS(
     private val scope: CoroutineScope,
     private val root: Path,
-    private val openFolder: suspend (CoroutineScope, Path) -> FolderLike,
-    private val onChange: (Iterator<FSPreviewItem>) -> Unit
+    private val onChange: (List<FSPreviewItem>) -> Unit,
+    private val openFolder: suspend (CoroutineScope, Path) -> FolderLike =
+        { outerScope, path -> FSFolder.make(outerScope, path) }
 ) {
-    private val activeFolders = mutableMapOf<FolderPath, Pair<FolderLike, WatchKey?>>()
+    private val activeFolders = mutableMapOf<FolderId, Pair<FolderLike, WatchKey?>>()
 
     private val watchService = FileSystems.getDefault().newWatchService()
 
-    private suspend fun activate(key: FolderPath, notify: Boolean = true) {
+    private suspend fun activate(key: FolderId, delayed: Boolean = false) {
         this.let { fs ->
             scope.launch(Dispatchers.IO) {
                 val folder = openFolder(this, key.value)
                 val watchKey = if (folder.watchable) {
-                    key.value.register(watchService, ENTRY_CREATE, ENTRY_DELETE)
+                    key.value.register(
+                        watchService,
+                        StandardWatchEventKinds.ENTRY_CREATE,
+                        StandardWatchEventKinds.ENTRY_DELETE
+                    )
                 } else null
                 activeFolders[key] = folder to watchKey
-                delay(1000)
+                if (delayed) delay(500)
+                // TODO: need to bind to the lifetime of the view
                 onChange(fs.preview())
             }
         }
     }
 
-    private suspend fun deactivate(key: FolderPath) {
+    private fun deactivate(key: FolderId) {
         activeFolders[key]?.second?.cancel()
         activeFolders.remove(key)
         onChange(preview())
     }
 
-    private suspend fun update(key: FolderPath) = this.let { fs ->
+    private suspend fun update(key: FolderId) = this.let { fs ->
         activeFolders[key]?.second?.let { watchKey ->
             scope.launch(Dispatchers.IO) {
                 activeFolders.replace(
@@ -69,17 +74,19 @@ class FS(
         if (level != 0) yield(
             FSPreviewItem(
                 level = level,
-                name = path.value.name,
-                key = path,
+                name = path.name,
+                path = path,
+                key = FolderId(path)
             )
         )
         subfolders.map { path ->
-            when (val activeChild = activeFolders[path]?.first) {
+            when (val activeChild = activeFolders[FolderId(path)]?.first) {
                 null -> yield(
                     FSPreviewItem(
                         level = level + 1,
-                        name = path.value.name,
-                        key = path
+                        name = path.name,
+                        path = path,
+                        key = FolderId(path)
                     )
                 )
                 else -> yieldAll(
@@ -91,28 +98,30 @@ class FS(
             yield(
                 FSPreviewItem(
                     level = level + 1,
-                    name = it.name
+                    name = it.name,
+                    path = it
                 )
             )
         }
     }
 
-    fun preview(): Iterator<FSPreviewItem> =
-        activeFolders[FolderPath(root)]?.first?.preview(0)
-            ?: iterator {}
+    private fun preview(): List<FSPreviewItem> =
+        activeFolders[FolderId(root)]?.first?.preview(0)
+            ?.asSequence()?.toList()
+            ?: emptyList()
 
     init {
         scope.launch(Dispatchers.IO) {
-            activate(FolderPath(root), notify = false)
+            activate(FolderId(root), delayed = true)
             while (scope.isActive) {
-                val key = watchService.take()
+                val key = watchService.poll(100, TimeUnit.MILLISECONDS) ?: continue
                 (key.watchable() as? Path)?.let { watchablePath ->
                     key.pollEvents()
-                        .filter { it.kind() == ENTRY_DELETE }
+                        .filter { it.kind() == StandardWatchEventKinds.ENTRY_DELETE }
                         .map { watchablePath.resolve(it.context() as Path) }
                         .filter { it.isDirectory() }
-                        .forEach { update(FolderPath(it)) }
-                    update(FolderPath(watchablePath))
+                        .forEach { update(FolderId(it)) }
+                    update(FolderId(watchablePath))
                 }
                 if (!key.reset()) {
                     key.cancel()
@@ -122,84 +131,39 @@ class FS(
         }
     }
 
-    suspend fun toggle(key: FolderPath) {
+    suspend fun toggle(key: FolderId) {
         if (key in activeFolders)
             deactivate(key)
         else activate(key)
     }
-
-    fun measure(): Int =
-        activeFolders[FolderPath(root)]?.let { (folder, _) ->
-            folder.subfolders
-                .sumOf {
-                    it.measureIf { path -> activeFolders[path]?.first }
-                } + folder.files.count()
-        } ?: 0
 }
 
-private fun FolderPath.measureIf(lookup: (FolderPath) -> FolderLike?): Int =
-    1 + when (val folder = lookup(this)) {
-        null -> 0
-        else ->
-            folder.subfolders.sumOf { it.measureIf(lookup) } +
-                    folder.files.count()
-    }
-
-class FSFolder(override val path: FolderPath): FolderLike {
+class FSFolder(override val path: Path): FolderLike {
     override val watchable = true
-    private var _subfolders: List<FolderPath>? = null
+
+    private var _subfolders: List<Path>? = null
+    override val subfolders get() = _subfolders ?: emptyList()
+
     private var _files: List<Path>? = null
+    override val files get() = _files ?: emptyList()
+
     private var _size: Int? = null
-
-    override val subfolders
-        get() = _subfolders ?: emptyList()
-
-    override val files
-        get() = _files ?: emptyList()
-
-    override val size
-        get() = _size ?: 0
+    override val size get() = _size ?: 0
 
     companion object {
-        suspend fun make(scope: CoroutineScope, path: FolderPath): FSFolder =
+        suspend fun make(scope: CoroutineScope, path: Path): FSFolder =
             FSFolder(path).also {
                 scope.launch(Dispatchers.IO) {
-                    it._size = Files.newDirectoryStream(path.value).count()
+                    it._size = Files.newDirectoryStream(path).count()
 
                     it._subfolders = Files.newDirectoryStream(
-                        path.value, DirectoryStream.Filter { it.isDirectory() }
-                    ).map { FolderPath(it) }
-                        .sortedBy { it.value.name }
+                        path, DirectoryStream.Filter { it.isDirectory() }
+                    ).sortedBy { it.name }
 
                     it._files = Files.newDirectoryStream(
-                        path.value, DirectoryStream.Filter { !it.isDirectory() }
-                    ).toList()
-                        .sortedBy { it.name }
+                        path, DirectoryStream.Filter { !it.isDirectory() }
+                    ).sortedBy { it.name }
                 }.join()
         }
     }
 }
-
-private fun <T> Iterator<Iterator<T>>.join(): Iterator<T> =
-    this.let { iterators ->
-        object : Iterator<T> {
-            var current = iterator()
-
-            override fun hasNext(): Boolean = current.hasNext() || let {
-                var result = false
-                while (iterators.hasNext()) {
-                    current = iterators.next()
-                    if (current.hasNext()) {
-                        result = true
-                        break
-                    }
-                }
-                result
-            }
-
-            override fun next(): T = current.next()
-        }
-    }
-
-private fun <T> singletonIf(condition: Boolean, block: () -> T): Iterator<T> =
-    iterator { if (condition) block() }

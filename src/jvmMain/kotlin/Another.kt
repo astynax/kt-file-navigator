@@ -1,8 +1,8 @@
 import androidx.compose.desktop.DesktopMaterialTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
@@ -14,49 +14,42 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.singleWindowApplication
 import fileNavigator.FS
-import fileNavigator.FSFolder
 import fileNavigator.FSPreviewItem
-import fileNavigator.FolderPath
 import kotlinx.coroutines.launch
 import java.nio.file.Path
 
 @Composable
 fun FSView() {
-    val verticalScrollState = rememberScrollState(0)
-    val (itemFlow, updateFlow) = remember {
-        mutableStateOf<Iterator<FSPreviewItem>>(iterator {})
+    val (data, updateData) = remember {
+        mutableStateOf<List<FSPreviewItem>>(listOf())
     }
     val scope = rememberCoroutineScope()
     val fs = remember {
         FS(
             scope = scope,
             root = Path.of("."),
-            onChange = updateFlow,
-            openFolder = { scope, path ->
-                FSFolder.make(scope, FolderPath(path))
-            }
+            onChange = updateData
         )
     }
 
-    Column(
+    LazyColumn(
         modifier = Modifier.fillMaxSize()
-            .verticalScroll(verticalScrollState)
     ) {
-        itemFlow.forEach { item ->
+        items(items = data, key = { it.path }) {
             Row(
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Spacer(modifier = Modifier.width((16 * item.level).dp))
+                Spacer(modifier = Modifier.width((16 * it.level).dp))
                 Text(
                     modifier = Modifier.fillMaxWidth()
-                        .then(when (item.key) {
+                        .then(when (val key = it.key) {
                             null -> Modifier
                             else -> Modifier.clickable {
-                                scope.launch { fs.toggle(item.key) }
+                                scope.launch { fs.toggle(key) }
                             }
                         }),
-                    text = item.name,
-                    style = when (item.key) {
+                    text = it.name,
+                    style = when (it.key) {
                         null -> TextStyle.Default
                         else -> TextStyle.Default.copy(fontWeight = FontWeight.Bold)
                     }
