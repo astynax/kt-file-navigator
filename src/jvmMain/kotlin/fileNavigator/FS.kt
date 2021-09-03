@@ -15,12 +15,24 @@ interface FolderLike {
     val size: Int
 }
 
-data class FSPreviewItem(
+enum class PreviewItemState {
+    File,
+    OpenedFolder,
+    ClosedFolder
+}
+
+data class FSPreviewItem (
     val level: Int,
     val name: String,
     val path: Path,
+    val state: PreviewItemState,
     val key: FolderId? = null
-)
+) {
+    override fun equals(other: Any?): Boolean =
+        this.path == (other as? FSPreviewItem)?.path
+
+    override fun hashCode(): Int = path.hashCode()
+}
 
 class FS(
     private val scope: CoroutineScope,
@@ -76,6 +88,7 @@ class FS(
                 level = level,
                 name = path.name,
                 path = path,
+                state = PreviewItemState.OpenedFolder,
                 key = FolderId(path)
             )
         )
@@ -86,6 +99,7 @@ class FS(
                         level = level + 1,
                         name = path.name,
                         path = path,
+                        state = PreviewItemState.ClosedFolder,
                         key = FolderId(path)
                     )
                 )
@@ -99,7 +113,8 @@ class FS(
                 FSPreviewItem(
                     level = level + 1,
                     name = it.name,
-                    path = it
+                    path = it,
+                    state = PreviewItemState.File
                 )
             )
         }
@@ -131,10 +146,12 @@ class FS(
         }
     }
 
-    suspend fun toggle(key: FolderId) {
-        if (key in activeFolders)
-            deactivate(key)
-        else activate(key)
+    suspend fun toggle(item: FSPreviewItem) {
+        item.key?.also {
+            if (it in activeFolders)
+                deactivate(it)
+            else activate(it)
+        }
     }
 }
 

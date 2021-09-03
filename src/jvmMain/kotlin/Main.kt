@@ -4,13 +4,15 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.window.singleWindowApplication
-import fileNavigator.*
+import fileNavigator.Browser
+import fileNavigator.Viewer
+import fileNavigator.rememberBrowserState
+import fileNavigator.rememberViewerState
 import java.nio.file.Path
 
 @Composable
@@ -19,7 +21,7 @@ fun UI() = Row(
 ) {
     val requester = remember { FocusRequester() }
     val browserState = rememberBrowserState(
-        root = Folder(Path.of("."))
+        root = Path.of(".")
     )
     val viewerState = rememberViewerState()
 
@@ -32,7 +34,7 @@ fun UI() = Row(
     )
     Viewer(
         state = viewerState,
-        path = browserState.selected,
+        path = browserState.selected?.path,
         modifier = Modifier
             .fillMaxHeight()
             .weight(3f)
