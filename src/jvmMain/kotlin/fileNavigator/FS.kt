@@ -2,8 +2,9 @@ package fileNavigator
 
 import kotlinx.coroutines.*
 import java.nio.file.*
-import java.util.concurrent.TimeUnit
-import kotlin.io.path.*
+import kotlin.io.path.exists
+import kotlin.io.path.isDirectory
+import kotlin.io.path.name
 
 inline class FolderId(val value: Path)
 
@@ -46,7 +47,7 @@ class FS(
     private val watchService = FileSystems.getDefault().newWatchService()
 
     private suspend fun activate(key: FolderId) {
-        this.let { fs ->
+        this.let {
             scope.launch(Dispatchers.IO) {
                 if (key.value.exists()) {
                     val folder = openFolder(this, key.value)
@@ -68,7 +69,7 @@ class FS(
         activeFolders.remove(key)
     }
 
-    private suspend fun update(key: FolderId) = this.let { fs ->
+    private suspend fun update(key: FolderId) = this.let {
         activeFolders[key]?.second?.let { watchKey ->
             scope.launch(Dispatchers.IO) {
                 activeFolders.replace(
@@ -187,13 +188,13 @@ class FSFolder(override val path: Path): FolderLike {
                 scope.launch(Dispatchers.IO) {
                     it._size = Files.newDirectoryStream(path).count()
 
-                    it._subfolders = Files.newDirectoryStream(
-                        path, DirectoryStream.Filter { it.isDirectory() }
-                    ).sortedBy { it.name }
+                    it._subfolders = Files.newDirectoryStream(path) {
+                        it.isDirectory()
+                    }.sortedBy { it.name }
 
-                    it._files = Files.newDirectoryStream(
-                        path, DirectoryStream.Filter { !it.isDirectory() }
-                    ).sortedBy { it.name }
+                    it._files = Files.newDirectoryStream(path) {
+                        !it.isDirectory()
+                    }.sortedBy { it.name }
                 }.join()
         }
     }
