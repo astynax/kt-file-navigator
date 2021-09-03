@@ -45,21 +45,20 @@ class FS(
 
     private val watchService = FileSystems.getDefault().newWatchService()
 
-    private suspend fun activate(key: FolderId, delayed: Boolean = false) {
+    private suspend fun activate(key: FolderId) {
         this.let { fs ->
             scope.launch(Dispatchers.IO) {
-                val folder = openFolder(this, key.value)
-                val watchKey = if (folder.watchable) {
-                    key.value.register(
-                        watchService,
-                        StandardWatchEventKinds.ENTRY_CREATE,
-                        StandardWatchEventKinds.ENTRY_DELETE
-                    )
-                } else null
-                activeFolders[key] = folder to watchKey
-                if (delayed) delay(500)
-                // TODO: need to bind to the lifetime of the view
-                onChange(fs.preview())
+                if (key.value.exists()) {
+                    val folder = openFolder(this, key.value)
+                    val watchKey = if (folder.watchable) {
+                        key.value.register(
+                            watchService,
+                            StandardWatchEventKinds.ENTRY_CREATE,
+                            StandardWatchEventKinds.ENTRY_DELETE
+                        )
+                    } else null
+                    activeFolders[key] = folder to watchKey
+                }
             }
         }
     }
@@ -67,7 +66,6 @@ class FS(
     private fun deactivate(key: FolderId) {
         activeFolders[key]?.second?.cancel()
         activeFolders.remove(key)
-        onChange(preview())
     }
 
     private suspend fun update(key: FolderId) = this.let { fs ->
@@ -77,7 +75,6 @@ class FS(
                     key,
                     openFolder(this, key.value) to watchKey
                 )
-                onChange(fs.preview())
             }
         }
     }
@@ -127,21 +124,37 @@ class FS(
 
     init {
         scope.launch(Dispatchers.IO) {
-            activate(FolderId(root), delayed = true)
+            activate(FolderId(root))
+            delay(500)  // TODO: bind to the view's lifetime
+            onChange(preview())
             while (scope.isActive) {
-                val key = watchService.poll(100, TimeUnit.MILLISECONDS) ?: continue
-                (key.watchable() as? Path)?.let { watchablePath ->
-                    key.pollEvents()
-                        .filter { it.kind() == StandardWatchEventKinds.ENTRY_DELETE }
-                        .map { watchablePath.resolve(it.context() as Path) }
-                        .filter { it.isDirectory() }
-                        .forEach { update(FolderId(it)) }
-                    update(FolderId(watchablePath))
+                delay(100)
+                val deleted = mutableSetOf<Path>()
+                val touched = mutableSetOf<Path>()
+                while (true) {
+                    val key = watchService.poll() ?: break
+                    (key.watchable() as? Path)?.let { watchablePath ->
+                        key.pollEvents().forEach {
+                            if (it.kind() == StandardWatchEventKinds.ENTRY_DELETE) {
+                                val path = watchablePath.resolve(it.context() as Path)
+                                if (FolderId(path) in activeFolders)
+                                    deleted.add(path)
+                            }
+                        }
+                        touched.add(watchablePath)
+                    }
+                    if (!key.reset()) {
+                        // TODO: need to think about such cases
+                        key.cancel()
+                    }
                 }
-                if (!key.reset()) {
-                    key.cancel()
-                    break
+                touched.removeAll(deleted)
+                deleted.forEach { deactivate(FolderId(it)) }
+                touched.forEach {
+                    if (it.exists()) update(FolderId(it))
+                    else deactivate(FolderId(it))
                 }
+                onChange(preview())
             }
         }
     }
@@ -151,6 +164,7 @@ class FS(
             if (it in activeFolders)
                 deactivate(it)
             else activate(it)
+            onChange(preview())
         }
     }
 }
